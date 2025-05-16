@@ -109,10 +109,11 @@ Question: {question_fs}\n{options_str_fs}\nAnswer:
                         cot_fs = cot_fs[2:].strip()
                     cot_fs = cot_fs.replace("\n", " ").strip()
                     cur_prompt_fs += f" {cot_fs}"
-                elif use_arr:  # ARR Ablation Study: using ARR = 000, 001, 010, 100, 111
+                elif use_arr:
                     arr_reasoning = self.text_cleaning(str(fs_example["arr"]))
                     match arr_ablation:
-                        case "000":  # Baseline: "Answer:"
+                        # ARR components: using ARR = 000, 100, 010, 001, or 111
+                        case "000":  # DA: "Answer:"
                             cur_prompt_fs = cur_prompt_fs.strip() + f" ({answer_label_fs}) {answer_str_fs}"
                         case "001":  # only Reasoning
                             cur_prompt_fs += " Let's answer the question with step-by-step reasoning. " + arr_reasoning
@@ -125,6 +126,27 @@ Question: {question_fs}\n{options_str_fs}\nAnswer:
                         case "111":  # ARR: Analyzing + Retrieving + Reasoning
                             cur_prompt_fs += (" Let's analyze the intent of the question, find relevant information, "
                                               "and answer the question with step-by-step reasoning. ") + arr_reasoning
+                        # ARR prompt variants: using ARR = var1, var2, var3, var4, or var5
+                        case "var1":  # ARR - prompt variant (paraphrase) 1
+                            cur_prompt_fs += (" Let's identify the question's intent, "
+                                              "gather the necessary information, and then "
+                                              "work through a logical, step-by-step solution. ") + arr_reasoning
+                        case "var2":  # ARR - prompt variant (paraphrase) 2
+                            cur_prompt_fs += (" We'll begin by examining what the question is asking, "
+                                              "then retrieve any relevant details, and finally provide "
+                                              "a well-reasoned answer step by step. ") + arr_reasoning
+                        case "var3":  # ARR - prompt variant (paraphrase) 3
+                            cur_prompt_fs += (" First, we'll interpret the purpose behind the question, "
+                                              "collect supporting information, and "
+                                              "proceed to solve it methodically. ") + arr_reasoning
+                        case "var4":  # ARR - prompt variant (paraphrase) 4
+                            cur_prompt_fs += (" Let's break this down by understanding the goal of the question, "
+                                              "pulling in the required data, and then "
+                                              "reasoning through the answer in a clear sequence. ") + arr_reasoning
+                        case "var5":  # ARR - prompt variant (paraphrase) 5
+                            cur_prompt_fs += (" To approach this, we'll clarify the question's intent, "
+                                              "locate pertinent information, and then build our answer using "
+                                              "structured, logical reasoning. ") + arr_reasoning
                         case _:
                             raise ValueError(f"ValueError: Unexpected value for arr_ablation: {arr_ablation}")
                     if arr_ablation != "000":
@@ -136,9 +158,10 @@ Question: {question_fs}\n{options_str_fs}\nAnswer:
 
         if use_cot:
             prompt_main += f" Let's think step by step."
-        elif use_arr:  # ARR Ablation Study: using ARR = 000, 001, 010, 100, 111
+        elif use_arr:
             match arr_ablation:
-                case "000":  # Baseline: "Answer:"
+                # ARR components: using ARR = 000, 100, 010, 001, or 111
+                case "000":  # DA: "Answer:"
                     pass
                 case "001":  # only Reasoning
                     prompt_main += f" Let's answer the question with step-by-step reasoning."
@@ -149,6 +172,22 @@ Question: {question_fs}\n{options_str_fs}\nAnswer:
                 case "111":  # ARR: Analyzing + Retrieving + Reasoning
                     prompt_main += (f" Let's analyze the intent of the question, "
                                     f"find relevant information, and answer the question with step-by-step reasoning.")
+                # ARR prompt variants: using ARR = var1, var2, var3, var4, or var5
+                case "var1":  # ARR - prompt variant (paraphrase) 1
+                    prompt_main += (f" Let's identify the question's intent, gather the necessary information, "
+                                    f"and then work through a logical, step-by-step solution.")
+                case "var2":  # ARR - prompt variant (paraphrase) 2
+                    prompt_main += (f" We'll begin by examining what the question is asking, then retrieve any "
+                                    f"relevant details, and finally provide a well-reasoned answer step by step.")
+                case "var3":  # ARR - prompt variant (paraphrase) 3
+                    prompt_main += (f" First, we'll interpret the purpose behind the question, collect "
+                                    f"supporting information, and proceed to solve it methodically.")
+                case "var4":  # ARR - prompt variant (paraphrase) 4
+                    prompt_main += (f" Let's break this down by understanding the goal of the question, pulling in "
+                                    f"the required data, and then reasoning through the answer in a clear sequence.")
+                case "var5":  # ARR - prompt variant (paraphrase) 5
+                    prompt_main += (f" To approach this, we'll clarify the question's intent, locate pertinent "
+                                    f"information, and then build our answer using structured, logical reasoning.")
                 case _:
                     raise ValueError(f"ValueError: Unexpected value for arr_ablation: {arr_ablation}")
         else:

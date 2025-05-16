@@ -43,12 +43,14 @@ class LMGenGPT:
             project_dir: Optional[str] = None,
             openai_model: str = "gpt-4o",
             openai_api_key: Optional[str] = None,
+            api_call_sleep: float = 3.0,
             temperature: float = 1.0,
             debug: bool = False,
             output_dir: Optional[str] = None,
             num_few_shot: int = 0,
             seed_few_shot: int = 42,
             max_num_few_shot: int = 10,
+            max_eval_num: int = -1,
             use_cot: bool = False,
             use_arr: bool = False,
             arr_ablation: str = "111",
@@ -69,6 +71,7 @@ class LMGenGPT:
         self.num_few_shot = num_few_shot
         self.seed_few_shot = seed_few_shot
         self.max_num_few_shot = max_num_few_shot
+        self.max_eval_num = max_eval_num
         self.use_cot = use_cot
         self.use_arr = use_arr
         self.arr_ablation = arr_ablation
@@ -107,6 +110,7 @@ class LMGenGPT:
         assert isinstance(self.openai_api_key, str), f"Assertion Error: openai_api_key = {self.openai_api_key}"
         self.client = OpenAI(api_key=self.openai_api_key)
         self.openai_model = openai_model  # "gpt-4o"
+        self.api_call_sleep = api_call_sleep
         self.temperature = temperature
 
     @staticmethod
@@ -139,6 +143,12 @@ class LMGenGPT:
         self.logger.info(f">>> Evaluation Task: {eval_task_name}")
         task_info = eval_task_obj.load_task()
         dataset_list = task_info["data"]
+
+        system_prompt = """
+You are a helpful assistant. \
+To answer the question, you need to select one from the given options. \
+Your final answer must start with "Final Answer:"
+        """.strip()
 
         # Deal with each task (and sub-tasks)
         all_results = {}
@@ -174,11 +184,13 @@ class LMGenGPT:
                 response = self.client.chat.completions.create(
                     model=self.openai_model,
                     messages=[
-                        {"role": "developer", "content": "You are a helpful assistant."},  # system prompt
+                        {"role": "developer", "content": system_prompt.strip()},
                         {"role": "user", "content": prompt_dict["prompt"]},
                     ],
                     temperature=self.temperature,
                 )
+                time.sleep(self.api_call_sleep)
+
                 res_text = str(response.choices[0].message.content).strip()
                 cur_gen_output = {
                     "index": idx,
@@ -194,6 +206,8 @@ class LMGenGPT:
                 cur_results.append(cur_gen_output)
                 if self.verbose and len(cur_results) % show_cnt == 0:
                     self.logger.info(f">>> Progress: [{ds_id}] [{len(cur_results)} / {len_dataset}]")
+                if len(cur_results) >= self.max_eval_num > 0:
+                    break
 
             all_results[ds_id] = cur_results
 
@@ -338,6 +352,7 @@ def main(
     eval_task_name: Optional[str] = None,
     openai_model: Optional[str] = None,
     openai_api_key: Optional[str] = None,
+    api_call_sleep: float = 3.0,
     temperature: float = 1.0,
     cache_dir: Optional[str] = None,
     project_dir: Optional[str] = None,
@@ -349,18 +364,21 @@ def main(
     num_few_shot: int = 0,
     seed_few_shot: int = 42,
     max_num_few_shot: int = 10,
+    max_eval_num: int = -1,
     use_cot: bool = False,
     use_arr: bool = False,
     arr_ablation: str = "111",
     **kwargs
 ) -> None:
     """
-    GPT API Generation for constructing the CoT/ARR reasoning for few-shot examples.
+    - Stage 1: Reasoning Generation. Let GPT freely generate reasoning for later evaluation.
+    - GPT API Generation for constructing the CoT/ARR reasoning for few-shot examples.
 
     :param task: 1. GPT API generation.
     :param eval_task_name: The name(s) of the evaluation task. (e.g., "boolq", "bbh", and "boolq,bbh")
     :param openai_model: e.g., "gpt-4o", "gpt-4o-2024-08-06"
     :param openai_api_key: your valid OpenAI API Key. https://platform.openai.com/
+    :param api_call_sleep: The sleep time between API calls.
     :param temperature: The temperature used for generation. Default: 1.0
     :param cache_dir: The root directory of the cache.
     :param project_dir: The root directory of the current project/repo.
@@ -372,6 +390,7 @@ def main(
     :param num_few_shot: The number of few-shot examples to provide. Default: 0
     :param seed_few_shot: Random seed for sampling few-shot examples.
     :param max_num_few_shot: The maximum number of few-shot examples.
+    :param max_eval_num: The maximum number of evaluation instances (per subtask).
     :param use_cot: Use chain-of-thought prompting (providing CoT reasoning/rationale in the few-shot examples) or not.
     :param use_arr: Use our ARR method (providing ARR reasoning/rationale in the few-shot examples) or not.
         ARR: Analyzer, Retriever, and Reasoner
@@ -398,12 +417,14 @@ def main(
         project_dir=project_dir,
         openai_model=openai_model,
         openai_api_key=openai_api_key,
+        api_call_sleep=max(float(api_call_sleep), 0.1),
         temperature=max(float(temperature), 0.0),
         debug=debug,
         output_dir=output_dir,
         num_few_shot=int(num_few_shot),
         seed_few_shot=int(seed_few_shot),
         max_num_few_shot=int(max_num_few_shot),
+        max_eval_num=int(max_eval_num),
         use_cot=use_cot,
         use_arr=use_arr,
         arr_ablation=str(arr_ablation).zfill(3),
@@ -412,16 +433,24 @@ def main(
     task = int(task)
     match task:
         case 1:
-            # After generation, manually check the CoT/ARR reasoning/rationale generated by GPT
+            # After generation, manually Check the CoT/ARR reasoning/rationale generated by GPT
             if isinstance(eval_task_name, tuple) or isinstance(eval_task_name, list):
                 for cur_task_name in eval_task_name:
                     cur_task_name = str(cur_task_name).strip()
                     lm_gen.gpt_generate_fewshot(eval_task_name=cur_task_name)
-                    # lm_gen.gpt_generate(eval_task_name=cur_task_name)
             elif isinstance(eval_task_name, str):
                 eval_task_name = str(eval_task_name).strip()
                 lm_gen.gpt_generate_fewshot(eval_task_name=eval_task_name)
-                # lm_gen.gpt_generate(eval_task_name=eval_task_name)
+            else:
+                raise ValueError(f"--eval_task_name should be a tuple/list/str: {eval_task_name}")
+        case 2:
+            if isinstance(eval_task_name, tuple) or isinstance(eval_task_name, list):
+                for cur_task_name in eval_task_name:
+                    cur_task_name = str(cur_task_name).strip()
+                    lm_gen.gpt_generate(eval_task_name=cur_task_name)
+            elif isinstance(eval_task_name, str):
+                eval_task_name = str(eval_task_name).strip()
+                lm_gen.gpt_generate(eval_task_name=eval_task_name)
             else:
                 raise ValueError(f"--eval_task_name should be a tuple/list/str: {eval_task_name}")
         case _:
